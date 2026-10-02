@@ -94,7 +94,6 @@ class ProcessingService:
                         f"неотправленных сообщений: {remaining}"
                     )
 
-                # Подтверждаем входное сообщение после отправки результата.
                 self.consumer.commit(message=msg, asynchronous=False)
                 logger.info("Transaction scored: %s", transaction_id)
 

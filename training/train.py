@@ -23,12 +23,10 @@ def main():
     data['transaction_time'] = pd.to_datetime(data['transaction_time'])
     data = data.sort_values('transaction_time').reset_index(drop=True)
 
-    # Последние 20% транзакций оставляем для проверки.
     split = int(len(data) * 0.8)
     train = data.iloc[:split].copy()
     validation = data.iloc[split:].copy()
 
-    # Все статистики вычисляем только по обучающей части.
     reference = load_train_data(train)
     preprocessor = fit_preprocessor(reference)
 
