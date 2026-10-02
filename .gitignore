@@ -1,0 +1,15 @@
+
+# Данные соревнования
+data/
+train.csv
+test.csv
+sample_submition.csv
+
+# Локальное окружение и служебные файлы
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+catboost_info/
+*.log

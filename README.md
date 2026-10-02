@@ -1,110 +1,37 @@
-# Real-Time Fraud Detection System
+# Потоковый скоринг фродовых транзакций
 
-DISCLAIMER
+Kafka `transactions` → препроцессинг → CatBoost → Kafka `scores` → PostgreSQL → Streamlit.
 
-Сервис подготовлен в демонстрационных целях для студентов курса МТС ШАД 2025 в рамках занятий по MLOps. Датасеты предоставлены в рамках соревнования https://www.kaggle.com/competitions/teta-ml-1-2025
+Проект использует [код семинара №4](https://github.com/NikitaMalykhin/mts25_mlops_hw2_real_time_fraud_detection) и собственную обученную модель. Сервис выполняет только inference на CPU. Модель и параметры препроцессинга находятся в `fraud_detector/models/`.
 
-Система для обнаружения мошеннических транзакций в реальном времени с использованием ML-модели и Kafka для потоковой обработки данных.
+Чтение и отправка сообщений, препроцессинг и скоринг разделены на файлы `fraud_detector/app/app.py`, `fraud_detector/src/preprocessing.py` и `fraud_detector/src/scorer.py`.
 
-## 🏗️ Архитектура
+Отдельный сервис `score_writer` читает топик `scores` с полями `transaction_id`, `score`, `fraud_flag` и записывает результаты в PostgreSQL. Контейнеры запускаются в одной сети через `docker-compose.yml`.
 
-Компоненты системы:
-1. **`interface`** (Streamlit UI):
-   
-   Создан для удобной симуляции потоковых данных с транзакциями. Реальный продукт использовал бы прямой поток данных из других систем.
-    - Имитирует отправку транзакций в Kafka через CSV-файлы.
-    - Генерирует уникальные ID для транзакций.
-    - Загружает транзакции отдельными сообщениями формата JSON в топик kafka `transactions`.
-    
+## Запуск
 
-2. **`fraud_detector`** (ML Service):
-   - Загружает предобученную модель CatBoost (`my_catboost.cbm`).
-   - Выполняет препроцессинг данных:
-     - Извлечение временных признаков
-     - Гео-расстояния
-     - Кодирование категориальных переменных
-   - Производит скоринг с порогом 0.98.
-   - Выгружает результат скоринга в топик kafka `scoring`
+Нужны Docker и Docker Compose. Запустите Docker и выполните из корня репозитория:
 
-3. **Kafka Infrastructure**:
-   - Zookeeper + Kafka брокер
-   - `kafka-setup`: автоматически создает топики `transactions` и `scoring`
-   - Kafka UI: веб-интерфейс для мониторинга сообщений (порт 8080)
-
-## 🚀 Быстрый старт
-
-### Требования
-- Docker 20.10+
-- Docker Compose 2.0+
-
-### Запуск
 ```bash
-git clone https://github.com/your-repo/fraud-detection-system.git
-cd fraud-detection-system
-
-# Сборка и запуск всех сервисов
-docker-compose up --build
-```
-После запуска:
-- **Streamlit UI**: http://localhost:8501
-- **Kafka UI**: http://localhost:8080
-- **Логи сервисов**: 
-  ```bash
-  docker-compose logs <service_name>  # Например: fraud_detector, kafka, interface
-
-## 🛠️ Использование
-
-### 1. Загрузка данных:
-
- - Загрузите CSV через интерфейс Streamlit. Для тестирования работы проекта используется файл формата `test.csv` из соревнования https://www.kaggle.com/competitions/teta-ml-1-2025
- - Пример структуры данных:
-    ```csv
-    transaction_time,amount,lat,lon,merchant_lat,merchant_lon,gender,...
-    2023-01-01 12:30:00,150.50,40.7128,-74.0060,40.7580,-73.9855,M,...
-    ```
- - Для первых тестов рекомендуется загружать небольшой семпл данных (до 100 транзакций) за раз, чтобы исполнение кода не заняло много времени.
-
-### 2. Мониторинг:
- - **Kafka UI**: Просматривайте сообщения в топиках transactions и scoring
- - **Логи обработки**: /app/logs/service.log внутри контейнера fraud_detector
-
-### 3. Результаты:
-
- - Скоринговые оценки пишутся в топик scoring в формате:
-    ```json
-    {
-    "score": 0.995, 
-    "fraud_flag": 1, 
-    "transaction_id": "d6b0f7a0-8e1a-4a3c-9b2d-5c8f9d1e2f3a"
-    }
-    ```
-## Структура проекта
-```
-.
-├── fraud_detector/
-│   ├── preprocessing.py    # Логика препроцессинга
-│   ├── scorer.py           # ML-модель и предсказания
-│   ├── app.py              # Kafka Consumer/Producer
-│   └── Dockerfile
-├── interface/
-│   └── app.py              # Streamlit UI
-├── docker-compose.yaml
-└── README.md
+docker compose up -d --build
+docker compose ps -a
 ```
 
-## Настройки Kafka
-```yml
-Топики:
-- transactions (входные данные)
-- scoring (результаты скоринга)
+Kafka и PostgreSQL должны быть `healthy`, остальные рабочие сервисы — `Up`. Для `kafka-setup` статус `Exited (0)` означает успешное создание топиков.
 
-Репликация: 1 (для разработки)
-Партиции: 3
+Приложение: [http://localhost:8501](http://localhost:8501).
+
+## Проверка
+
+1. Скачайте `test.csv` из [соревнования Kaggle](https://www.kaggle.com/t/1918f3f6435300327d38d6c596f97394).
+2. Загрузите `test.csv` в приложение и нажмите «Отправить test.csv». Дождитесь статуса «Отправлен».
+3. Нажмите «Посмотреть результаты». Интерфейс показывает:
+   - 10 последних транзакций из PostgreSQL с `fraud_flag = 1`, если они есть;
+   - гистограмму скоров последних 100 транзакций; если в базе меньше 100, используются все имеющиеся записи.
+
+Проверка записи результатов в PostgreSQL:
+
+```bash
+docker compose exec postgres psql -U fraud -d fraud -c \
+"SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE fraud_flag = 1) AS fraud FROM transaction_scores;"
 ```
-
-*Примечание:* 
-
-Для полной функциональности убедитесь, что:
-1. Модель `my_catboost.cbm` размещена в `fraud_detector/models/`
-2. Тренировочные данные находятся в `fraud_detector/train_data/`
-3. Порты 8080, 8501 и 9095 свободны на хосте

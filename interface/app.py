@@ -5,6 +5,8 @@ import json
 import time
 import os
 import uuid
+import psycopg
+import altair as alt
 
 # Конфигурация Kafka
 KAFKA_CONFIG = {
@@ -100,3 +102,83 @@ if st.session_state.uploaded_files:
                             st.rerun()
                 else:
                     st.error("Файл не содержит данных")
+
+st.divider()
+st.subheader("Результаты скоринга")
+
+if st.button("Посмотреть результаты"):
+    try:
+        with psycopg.connect(
+            os.environ["DATABASE_URL"],
+            connect_timeout=10,
+        ) as connection:
+            fraud_rows = connection.execute(
+                """
+                SELECT transaction_id, score, fraud_flag
+                FROM transaction_scores
+                WHERE fraud_flag = 1
+                ORDER BY id DESC
+                LIMIT 10
+                """
+            ).fetchall()
+
+            score_rows = connection.execute(
+                """
+                SELECT score
+                FROM transaction_scores
+                ORDER BY id DESC
+                LIMIT 100
+                """
+            ).fetchall()
+
+        fraud_df = pd.DataFrame(
+            fraud_rows,
+            columns=["transaction_id", "score", "fraud_flag"],
+        )
+        scores_df = pd.DataFrame(
+            score_rows,
+            columns=["score"],
+        )
+
+        st.subheader("Последние 10 фродовых транзакций")
+
+        if fraud_df.empty:
+            st.info("Фродовые транзакции пока не найдены.")
+        else:
+            st.dataframe(
+                fraud_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        if scores_df.empty:
+            st.info("В базе пока нет транзакций.")
+        else:
+            st.subheader(
+                f"Распределение скоров последних "
+                f"{len(scores_df)} транзакций"
+            )
+
+            histogram = (
+                alt.Chart(scores_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X(
+                        "score:Q",
+                        bin=alt.Bin(maxbins=20),
+                        title="Скор модели",
+                    ),
+                    y=alt.Y(
+                        "count():Q",
+                        title="Количество транзакций",
+                    ),
+                )
+            )
+
+            st.altair_chart(
+                histogram,
+                use_container_width=True,
+            )
+
+    except Exception as error:
+        st.error(f"Не удалось получить результаты: {error}")
