@@ -1,4 +1,4 @@
-# Потоковый скоринг фродовых транзакций
+# Скоринг фродовых транзакций
 
 Kafka `transactions` → препроцессинг → CatBoost → Kafka `scores` → PostgreSQL → Streamlit.
 
